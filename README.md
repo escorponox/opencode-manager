@@ -1,16 +1,23 @@
 # OpenCode Manager
 
+**POC Global OpenCode Server Manager for Multi-Project Workflows**
+
+**Note: This is a just for my personal use and tailored to my specific workflow in my current enviroment. But maybe it can be useful for others as well, so I'm sharing it here.**
+
 Global OpenCode server manager for multi-project workflows. Manage multiple OpenCode AI assistant servers across different projects with a unified REST API and MCP server.
 
 ## Features
 
 - **Multi-Project Management**: Start, stop, and manage OpenCode servers for multiple projects simultaneously
 - **REST API**: Complete HTTP API for programmatic control
+- **Status page**: View all registered projects, their server status, and TUI attachment status and logs in `/status`
 - **Interactive API Documentation**: Swagger UI documentation at `/docs`
-- **MCP Server**: Model Context Protocol server for AI agent integration
-- **Tmux TUI Integration**: Attach and manage Terminal User Interfaces in tmux
+- **MCP Server**: Model Context Protocol server to help AI agents discover and build REST API clients
+- **Tmux TUI Integration**: Attach and manage Terminal User Interfaces in tmux sessions
 - **Server-Sent Events**: Real-time event streaming from OpenCode servers
 - **Automatic Server Lifecycle**: Smart server startup and health checking
+- **CLI Wrapper**: `oc` script for quick access from any project directory
+- **Neovim Plugin**: POC Neovim plugin for sending prompts and focusing TUIs in tmux
 
 ## Prerequisites
 
@@ -27,11 +34,13 @@ The OpenCode Manager service requires the following binaries to be in the system
 - **opencode** - Typically `~/.opencode/bin/opencode`
 
 If running as a launchd service, ensure the `PATH` environment variable in the plist file includes:
+
 - `/opt/homebrew/bin` (for Homebrew-installed binaries on Apple Silicon)
 - `/usr/local/bin` (for Homebrew-installed binaries on Intel Mac)
 - `~/.opencode/bin` (for OpenCode CLI)
 
 Example launchd PATH configuration in `~/Library/LaunchAgents/com.opencode.manager.plist`:
+
 ```xml
 <key>PATH</key>
 <string>/opt/homebrew/bin:/Users/USERNAME/.opencode/bin:/Users/USERNAME/.volta/bin:/usr/local/bin:/usr/bin:/bin</string>
@@ -71,6 +80,7 @@ oc
 ```
 
 **What it does:**
+
 - Automatically detects the current project directory
 - Checks if OpenCode Manager is running (port 4095)
 - If no server exists for the project: starts one and attaches a TUI
@@ -78,11 +88,57 @@ oc
 - If TUI already attached: focuses the existing TUI window
 
 **Requirements:**
+
 - OpenCode Manager must be running (via launchd service)
 - tmux session named `dev` must be active
 - Hammerspoon optional (for automatic window focusing via `hs -c 'focusGhostty()'`)
 
 This eliminates the need to manually manage server lifecycle or remember port numbers - just run `oc` from any project directory.
+
+### Neovim Plugin (POC)
+
+The `opencode.lua` file in `scripts/opencode.lua` is a proof-of-concept Neovim plugin that integrates with OpenCode Manager:
+
+**Features:**
+
+- Send prompts to OpenCode from Neovim with file context (file, line, column)
+- Automatically focus the corresponding TUI in tmux session
+- SSE (Server-Sent Events) integration for real-time notifications
+- Auto-connect SSE when sending prompts
+- Idle timeout disconnection to conserve resources
+- Debounced notifications for message updates
+
+**Setup:**
+
+```lua
+-- In your Neovim config (e.g., lazy.nvim)
+{
+  dir = "~/.movidas/manager/scripts",
+  name = "opencode-manager",
+  config = function()
+    require("opencode").setup({
+      sse_enabled = true,
+      sse_idle_timeout = 300, -- 5 minutes
+      sse_debug = false,
+      sse_debounce_interval = 2, -- seconds
+    })
+  end,
+}
+```
+
+**Usage:**
+
+- `,eo` - Focus OpenCode TUI in tmux (starts server and attaches TUI if needed)
+- `,ep` - Send custom prompt with file context
+
+**Requirements:**
+
+- OpenCode Manager running (via launchd service)
+- tmux session named `dev`
+- [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) for SSE support
+- Hammerspoon (optional) for terminal window focusing
+
+The plugin automatically ensures the server is running, sends prompts with context, and focuses the tmux window containing the OpenCode TUI.
 
 ### API Documentation
 
@@ -100,13 +156,17 @@ The manager provides a **read-only MCP documentation endpoint** (MCP 2025-06-18 
 - `GET /mcp` - Open SSE stream (if needed)
 - `DELETE /mcp` - Terminate session
 
-**Purpose: API Discovery Only**
+**Purpose: Help AI Agents Build REST API Clients**
+
 - ✅ Exposes REST API documentation as MCP Resources
 - ✅ Provides OpenAPI spec, examples, and architecture docs
 - ❌ **NO executable actions** - use REST API for operations
-- ✅ AI agents discover the API, then use REST endpoints
+- ✅ AI agents discover the API, then build clients using REST endpoints
+
+The MCP server exists **only to help AI agents understand the API** and generate proper REST API client code. It does not execute actions directly.
 
 **Features:**
+
 - Full MCP 2025-06-18 specification compliance
 - Session management with secure session IDs
 - SSE streaming with resumability
@@ -148,17 +208,19 @@ No separate MCP server process needed - fully integrated into the HTTP server!
 - `DELETE /mcp` - Terminate session
 
 **MCP Resources (Read-Only):**
+
 - `resource://opencode-manager/openapi` - Full OpenAPI spec
 - `resource://opencode-manager/api/endpoints` - Endpoint summary
 - `resource://opencode-manager/api/examples` - Usage examples
 - `resource://opencode-manager/architecture` - System architecture
 
 **Required Headers:**
+
 - `MCP-Protocol-Version`: Protocol version (e.g., "2025-06-18")
 - `Accept`: Must include "application/json" and/or "text/event-stream"
 - `Mcp-Session-Id`: Session ID (after initialization)
 
-**Important**: MCP is read-only documentation. Use REST API for operations.
+**Important**: MCP is read-only documentation to help agents build clients. Use REST API for operations.
 
 **Note**: Project paths in URLs must be base64url-encoded.
 
@@ -171,7 +233,7 @@ The MCP endpoint exposes read-only documentation resources for AI agents to disc
 - `api/examples` - curl examples for common operations (Markdown)
 - `architecture` - System architecture and design (Markdown)
 
-**No executable actions via MCP** - agents read docs, then use REST API for operations.
+**Purpose:** Help AI agents understand the REST API structure and build proper REST API clients. The MCP server does not execute actions - agents read the documentation, then implement REST API clients for actual operations.
 
 ## Configuration
 
@@ -180,11 +242,30 @@ The MCP endpoint exposes read-only documentation resources for AI agents to disc
 - Manager server: `4095`
 - Project servers: Starting from `4097` (auto-incremented)
 
-### Tmux Requirements
+### Tmux Integration
 
-TUI features require:
-- A tmux session named `dev`
-- tmux must be installed and running
+The manager integrates deeply with tmux to provide Terminal User Interface (TUI) features:
+
+**Features:**
+
+- Attach OpenCode TUI to tmux windows and panes
+- Focus existing TUIs by switching to the correct tmux window
+- Track tmux session, window, and pane information for each project
+- Support for both CLI and Neovim TUI attachment
+
+**Requirements:**
+
+- tmux must be installed and in PATH
+- A tmux session named `dev` must be running
+- tmux binary location must be in launchd service PATH (see Troubleshooting)
+
+**How it works:**
+
+1. When attaching a TUI, the manager creates a new tmux window in the `dev` session
+2. The TUI is launched in that window with the project name as the window title
+3. Window and pane IDs are stored in the project registry
+4. Focusing a TUI switches to the corresponding tmux window
+5. The `oc` script and Neovim plugin use this to seamlessly switch between projects
 
 ## Examples
 
@@ -231,10 +312,12 @@ AI agents can connect to the MCP endpoint to discover the REST API:
 ```
 
 **Agent Workflow:**
-1. Connect via MCP
-2. Call `resources/list` to discover documentation
-3. Call `resources/read` to get API details
-4. **Use REST API** for actual operations (not MCP)
+
+1. Connect via MCP to discover the API
+2. Call `resources/list` to see available documentation
+3. Call `resources/read` to get OpenAPI spec and examples
+4. **Build a REST API client** based on the documentation
+5. **Use the REST API client** for all operations (not MCP)
 
 **Example MCP Request (documentation discovery):**
 
@@ -356,8 +439,9 @@ npm run type-check
 ### "Tmux session 'dev' is not running" Error
 
 **Symptom:** API calls to `/attach-tui-cli` or `/attach-tui-neovim` return 400 error:
+
 ```json
-{"error":"Tmux session 'dev' is not running"}
+{ "error": "Tmux session 'dev' is not running" }
 ```
 
 **Cause:** The launchd service PATH doesn't include the directory where tmux is installed, preventing the manager from finding the `tmux` binary.
@@ -365,23 +449,27 @@ npm run type-check
 **Solution:**
 
 1. Verify where tmux is installed:
+
    ```bash
    which tmux
    # Usually /opt/homebrew/bin/tmux (Apple Silicon) or /usr/local/bin/tmux (Intel)
    ```
 
 2. Edit the launchd plist file:
+
    ```bash
    nano ~/Library/LaunchAgents/com.opencode.manager.plist
    ```
 
 3. Add the tmux directory to the PATH. For Apple Silicon Macs with Homebrew:
+
    ```xml
    <key>PATH</key>
    <string>/opt/homebrew/bin:/Users/USERNAME/.opencode/bin:/Users/USERNAME/.volta/bin:/usr/local/bin:/usr/bin:/bin</string>
    ```
 
 4. Restart the service:
+
    ```bash
    launchctl unload ~/Library/LaunchAgents/com.opencode.manager.plist
    launchctl load ~/Library/LaunchAgents/com.opencode.manager.plist
@@ -404,6 +492,7 @@ npm run type-check
 ### Check Service Logs
 
 View manager logs:
+
 ```bash
 tail -f ~/.local/state/opencode/manager.log
 tail -f ~/.local/state/opencode/manager.error.log
