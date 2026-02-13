@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# OpenCode CLI wrapper - attaches to existing server or starts new one
+
+MANAGER_URL="http://localhost:4095"
+PROJECT_PATH="$(pwd)"
+
+# Base64url encode the project path
+ENCODED_PATH=$(echo -n "$PROJECT_PATH" | base64 | tr '+/' '-_' | tr -d '=')
+
+# Check if manager is running
+if ! curl -s "${MANAGER_URL}/health" > /dev/null 2>&1; then
+    echo "Error: OpenCode Manager is not running"
+    echo "Start it with: launchctl load ~/Library/LaunchAgents/com.opencode.manager.plist"
+    exit 1
+fi
+
+# Get project status from manager
+PROJECT_STATUS=$(curl -s "${MANAGER_URL}/project/${ENCODED_PATH}" 2>/dev/null)
+
+if echo "$PROJECT_STATUS" | grep -q '"error"'; then
+    # No server running, start one and attach TUI
+    echo "Starting OpenCode server for $(basename "$PROJECT_PATH")..."
+    RESULT=$(curl -s -X POST "${MANAGER_URL}/project/${ENCODED_PATH}/attach-tui-cli")
+   
+    if echo "$RESULT" | grep -q '"success":true'; then
+        echo "TUI attached successfully"
+    else
+        echo "Failed to attach TUI: $RESULT"
+        exit 1
+    fi
+else
+    # Server exists
+    HAS_TUI=$(echo "$PROJECT_STATUS" | grep -o '"hasTUI":[^,}]*' | cut -d: -f2)
+    
+    if [ "$HAS_TUI" = "true" ]; then
+        # TUI already attached, just focus it
+        echo "Focusing existing TUI..."
+        curl -s -X POST "${MANAGER_URL}/project/${ENCODED_PATH}/focus-tui" > /dev/null
+    else
+        # Server running but no TUI, attach one
+        echo "Attaching TUI to existing server..."
+        RESULT=$(curl -s -X POST "${MANAGER_URL}/project/${ENCODED_PATH}/attach-tui-cli")
+        
+        if echo "$RESULT" | grep -q '"success":true'; then
+            echo "TUI attached successfully"
+        else
+            echo "Failed to attach TUI: $RESULT"
+            exit 1
+        fi
+    fi
+fi
+
+# Focus Ghostty via hammerspoon so I can go back to the app with layer+g (the tmux session is in Ghostty)
+hs -c 'focusGhostty()'

@@ -57,6 +57,33 @@ npm start
 
 The server runs on `http://127.0.0.1:4095`
 
+### Quick CLI Access (oc script)
+
+The `oc` script in `scripts/oc` provides a convenient command-line wrapper for quickly accessing OpenCode in the current directory:
+
+```bash
+# Add to your PATH for easy access
+ln -s "$(pwd)/scripts/oc" /usr/local/bin/oc
+
+# Then use from any project directory:
+cd /path/to/your/project
+oc
+```
+
+**What it does:**
+- Automatically detects the current project directory
+- Checks if OpenCode Manager is running (port 4095)
+- If no server exists for the project: starts one and attaches a TUI
+- If server exists without TUI: attaches a TUI to the existing server
+- If TUI already attached: focuses the existing TUI window
+
+**Requirements:**
+- OpenCode Manager must be running (via launchd service)
+- tmux session named `dev` must be active
+- Hammerspoon optional (for automatic window focusing via `hs -c 'focusGhostty()'`)
+
+This eliminates the need to manually manage server lifecycle or remember port numbers - just run `oc` from any project directory.
+
 ### API Documentation
 
 Once the server is running, visit the interactive API documentation:
