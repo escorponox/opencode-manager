@@ -343,66 +343,6 @@ export function getClient(port: number) {
   });
 }
 
-export async function sendPrompt(
-  projectPath: string,
-  text: string,
-  context?: { file?: string; line?: number; col?: number },
-): Promise<unknown> {
-  const entry = registry.get(projectPath);
-  if (!entry || entry.status !== "running") {
-    throw new Error(`No running server for ${projectPath}`);
-  }
-
-  const client = getClient(entry.port);
-
-  // Create or get session
-  const sessions = await client.session.list();
-  let sessionId: string;
-
-  if (sessions.data && sessions.data.length > 0) {
-    // Use the most recent session
-    sessionId = sessions.data[0].id;
-  } else {
-    const newSession = await client.session.create({
-      body: { title: "nvim-session" },
-    });
-    if (!newSession.data) {
-      throw new Error("Failed to create session");
-    }
-    sessionId = newSession.data.id;
-  }
-
-  // Build prompt with context
-  let fullPrompt = text;
-  if (context?.file) {
-    fullPrompt = `@${context.file}`;
-    if (context.line) {
-      fullPrompt += ` line: ${context.line}`;
-      if (context.col) {
-        fullPrompt += ` col: ${context.col}`;
-      }
-    }
-    fullPrompt += `\n\n${text}`;
-  }
-
-  logger.debug(
-    { sessionId, promptPreview: fullPrompt.slice(0, 100) },
-    "Sending prompt",
-  );
-
-  // Send prompt
-  const result = await client.session.prompt({
-    path: { id: sessionId },
-    body: {
-      parts: [{ type: "text", text: fullPrompt }],
-    },
-  });
-
-  registry.update(projectPath, {}); // Update lastActivity
-
-  return result.data;
-}
-
 export async function sendPromptAsync(
   projectPath: string,
   text: string,

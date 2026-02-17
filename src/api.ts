@@ -5,7 +5,6 @@ import type { Request, Response } from "express";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
 import YAML from "yaml";
-import { addConnection } from "./events.ts";
 import { createLogger } from "./logger.ts";
 import { handleMcpDelete, handleMcpGet, handleMcpPost } from "./mcp-handler.ts";
 import {
@@ -286,39 +285,6 @@ router.post("/project/:path/focus-tui", (req: Request, res: Response) => {
   } catch (error) {
     logger.error({ error, projectPath: req.params.path }, "Error focusing TUI");
     res.status(500).json({ error: String(error) });
-  }
-});
-
-// SSE events for project
-router.get("/project/:path/events", (req: Request, res: Response) => {
-  try {
-    const projectPath = decodePath(String(req.params.path));
-    const entry = registry.get(projectPath);
-
-    if (!entry || entry.status !== "running") {
-      res.status(404).json({ error: "No running server for this project" });
-    } else {
-      // Set up SSE
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-      res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
-      res.flushHeaders();
-
-      // Send initial connection event
-      res.write(
-        `event: connected\ndata: ${JSON.stringify({ projectPath })}\n\n`,
-      );
-
-      // Add to connections for event forwarding
-      addConnection(projectPath, res);
-    }
-  } catch (error) {
-    logger.error(
-      { error, projectPath: req.params.path },
-      "Error setting up events",
-    );
-    res.status(400).json({ error: "Invalid path encoding" });
   }
 });
 
